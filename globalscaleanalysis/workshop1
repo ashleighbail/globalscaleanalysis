@@ -1,0 +1,31 @@
+// Workshop 1
+print ('Hello, World!')
+// Variables are used to store objects, and are defined using the keyword var.
+var city = 'San Francisco';
+print (city);
+var population = 873965;
+print (population);
+print('The value for the population variable is:', population);
+var cities = ['San Francisco', 'Los Angeles', 'New York', 'Atlanta'];
+print (cities);
+var cityData = {
+  'city': 'San Francisco',
+  'coordinates': [-122.4194, 37.7749],
+  'population': 873965
+};
+print(cityData);
+// Functions can be defined as a way to reuse code and make it easier to read
+var my_hello_function = function(string) {
+  return 'Hello' + string + '!';
+};
+print(my_hello_function('world'));
+var a = 1;
+var b = 2;
+print (a);
+var result = a + b;
+print (result, 'javascript way')
+var result = ee.Number(a).add(b);
+print (result, 'Earth Engine way');
+var yearList = ee.List.sequence(1980, 2020, 5);
+print(yearList);
+

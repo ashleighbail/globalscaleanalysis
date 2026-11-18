@@ -1,0 +1,126 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Heron = /* color: #ff4a4a */ee.Feature(
+        ee.Geometry.Point([151.9129523548194, -23.442945911365054]),
+        {
+          "station": "HeronIsland",
+          "system:index": "0"
+        }),
+    Hamilton = /* color: #c261ab */ee.Feature(
+        ee.Geometry.Point([148.95572911435178, -20.345699349514728]),
+        {
+          "station": "HamiltonIsland",
+          "system:index": "0"
+        }),
+    Lizard = /* color: #c4ff9b */ee.Feature(
+        ee.Geometry.Point([145.44807390601608, -14.678962153165866]),
+        {
+          "station": "LizardIsland",
+          "system:index": "0"
+        }),
+    Daydream = /* color: #f4ff7a */ee.Feature(
+        ee.Geometry.Point([148.81473937224123, -20.251946247877342]),
+        {
+          "station": "DaydreamIsland",
+          "system:index": "0"
+        }),
+    Orpheus = /* color: #9ef8ff */ee.Feature(
+        ee.Geometry.Point([146.4900120809705, -18.61331923451948]),
+        {
+          "station": "OrpheusIsland",
+          "system:index": "0"
+        }),
+    Moreton = /* color: #ffc82d */ee.Feature(
+        ee.Geometry.Point([153.40025974795017, -27.496533058418965]),
+        {
+          "station": "MoretonIsland",
+          "system:index": "0"
+        }),
+    GumpSouthPacific = /* color: #8cb2ff */ee.Feature(
+        ee.Geometry.Point([-149.8263465676576, -17.490733361079016]),
+        {
+          "station": "GumpSouthPacificStation",
+          "system:index": "0"
+        }),
+    OneTree = /* color: #ff76b9 */ee.Feature(
+        ee.Geometry.Point([152.09177961819157, -23.50667463413574]),
+        {
+          "station": "OneTreeIsland",
+          "system:index": "0"
+        }),
+    CoralBay = /* color: #b7dfff */ee.Feature(
+        ee.Geometry.Point([113.77052746582227, -23.14257014225772]),
+        {
+          "station": "CoralBay",
+          "system:index": "0"
+        }),
+    Kimberley = /* color: #ff26a3 */ee.Feature(
+        ee.Geometry.Point([123.01012059783933, -16.452388830543853]),
+        {
+          "station": "Kimberley",
+          "system:index": "0"
+        });
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Workshop 4: Allen Coral Atlas
+/* The purpose of this script is to understand which research station has the most coral cover
+within snorkelling distance from the station */
+
+var distance = 300 // metre limit from the station for snorkelling
+
+Map.setOptions('SATELLITE');
+// Map.setCenter( 133.775, -25.274, 3) // Zoom out to view all stations
+
+var stations = ee.FeatureCollection([Heron, Hamilton, Lizard, Daydream, Orpheus, Moreton, GumpSouthPacific, OneTree, CoralBay, Kimberley]);
+print (stations);
+
+var allencoralatlas = ee.Image("ACA/reef_habitat/v2_0");
+print  (allencoralatlas);
+
+var benthic = allencoralatlas.select('benthic');
+print (benthic);
+Map.addLayer (benthic, {min: 0, max: 18, palette: allencoralatlas.get('benthic_class_palette').getInfo()}, 'ACA: Benthic', false);
+
+var coral_algae = benthic.eq(15);
+print (coral_algae);
+coral_algae = coral_algae.selfMask();
+Map.addLayer (coral_algae, {palette: 'ff6161'}, 'Coral / Algae');
+
+var buffered = ee.Feature(stations.first())
+   .buffer(distance);
+   
+var buffered_style = {color: 'b8c0ff', fillColor: '00000000', width: 3 };
+
+// Write a function that applies a buffer
+var bufferer = function(feature) {
+  var buffered = feature.buffer(distance)
+  return buffered;
+};
+
+var bufferedStations = stations.map(bufferer);
+print (bufferedStations);
+Map.addLayer (bufferedStations.style(buffered_style), {}, '300m Distance Buffer');
+
+// Calculate area of coral within buffer
+var coral_area = coral_algae
+  .multiply (ee.Image.pixelArea())
+  .reduceRegions({
+    reducer: ee.Reducer.sum(),
+    collection: bufferedStations,
+    scale: 5
+  });
+  
+print ('Area of coral/algae within buffer(m)', coral_area)
+
+var coral_buffered = coral_algae.clip(bufferedStations);
+Map.addLayer (coral_buffered, {min:0, max: 1, palette: 'fdc500'}, 'Coral/Algae Buffered Area')
+
+var coral_area = coral_area.sort('sum', false);
+
+print('Coral area ranked largest to smallest', coral_area);
+
+// Download (not to Google Drive)
+var downloadLink = coral_area.getDownloadURL({
+  format: 'CSV',
+  filename: 'research_stations'
+});
+print('Download results as CSV', downloadLink);
+

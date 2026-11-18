@@ -1,0 +1,250 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var eez = ee.FeatureCollection("projects/vernal-potion-514323-d7/assets/eez_v12");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/* Assignment: Mapping the world's deep ocean ecosystems */
+
+var snazzy = require("users/aazuspan/snazzy:styles");
+snazzy.addStyle("https://snazzymaps.com/style/72543/assassins-creed-iv", "Theme")
+
+// Part 1. Import the data
+var global_elevation = ee.Image("NOAA/NGDC/ETOPO1");
+print (global_elevation);
+
+var bedrock = global_elevation.select('bedrock');
+bedrock = bedrock.updateMask(bedrock.lt(0));
+print(bedrock);
+
+var magma_palette = ['#000004', '#180f3d', '#440f76', '#721f81', '#9e2f7f', '#cd4071', '#f1605d', '#fd9668', '#feca8d', '#fcfdbf'];
+Map.addLayer(bedrock, {min: -6000, max: 0, palette: magma_palette}, 'Seabed elevation');
+
+// Coastline
+var coast = ee.FeatureCollection('projects/UQ_intertidal/dataMasks/naturalEarthCoastline_v1');
+Map.addLayer(coast, {color: '222222'}, 'Coastline');
+
+// Part 2. Build a raster map of each of the following major ecosystem types.
+/* Hadal trenches and troughs (> 6000 m)
+   Abyssal plains (3000 - 6000 m)
+   Continental and island slopes (250 - 3000 m)
+   Submarine canyons (deeper than 200 m, slopes of > 6 degrees) */
+   
+var hadal = bedrock.lt(-6000).selfMask();
+Map.addLayer(hadal, {min: 0, max: 1, palette: ['29205C']}, 'Hadal trenches and troughs');
+
+var abyssal = bedrock.gte(-6000)
+  .and(bedrock.lte(-3000))
+  .selfMask();
+Map.addLayer(abyssal, {min: 0, max: 1, palette: ['164B83']}, 'Abyssal plains');
+
+var continental = bedrock.gt(-3000)
+  .and(bedrock.lte(-250))
+  .selfMask();
+Map.addLayer(continental, {min: 0, max: 1, palette: ['3996B8']}, 'Continental and island slopes');
+
+var terrain = ee.Terrain.products(bedrock);
+var slope = terrain.select('slope');
+
+var canyons = bedrock.lt(-200)
+  .and(slope.gt(6))
+  .selfMask();
+Map.addLayer(canyons, {min: 0, max: 1, palette: ['red']}, 'Submarine canyons');
+
+// Part 3. Add at least one vector dataset
+
+// a. Marine Protected Areas (IUCN Categories)
+
+var protected_areas = ee.FeatureCollection('WCMC/WDPA/current/polygons');
+print (protected_areas.limit(50))
+
+var marine_protected = protected_areas
+  .filter(ee.Filter.inList('REALM', ['Coastal', 'Marine']))
+  .filter(ee.Filter.neq('STATUS', 'Proposed'));
+  
+var strict_wilderness = marine_protected.filter(
+  ee.Filter.inList('IUCN_CAT', ['Ia', 'Ib'])
+);
+print('Strict reserves and wilderness areas', strict_wilderness.size());
+var nat_park = marine_protected.filter(
+  ee.Filter.inList('IUCN_CAT', ['II', 'III'])
+);
+print('National parks and natural monuments', nat_park.size());
+var habitat_management = marine_protected.filter(
+  ee.Filter.eq('IUCN_CAT', 'IV')
+);
+print('Habitat/species management areas', habitat_management.size());
+var landscape_sustainable = marine_protected.filter(
+  ee.Filter.inList('IUCN_CAT', ['V', 'VI'])
+);
+print('Protected landscapes/seascapes and sustainable-use areas', landscape_sustainable.size());
+var category_unknown = marine_protected.filter(
+  ee.Filter.inList('IUCN_CAT', [
+    'Not Assigned',
+    'Not Reported',
+    'Not Applicable'
+  ])
+);
+print('Category unavailable or not applicable', category_unknown.size());
+
+print('Marine protected area count', marine_protected.size());
+
+var protected_style = {
+  color: 'db00b6',
+  fillColor: '00000000',
+  width: 1
+};
+
+// Map.addLayer(marine_protected.style(protected_style), {}, 'Marine and coastal protected areas');
+
+Map.addLayer(category_unknown.style({
+    color: 'AAAAAA',
+    fillColor: '00000000',
+    width: 1
+  }), {}, 'MPAs: category unavailable or not applicable');
+Map.addLayer(strict_wilderness.style({color: 'ff7096'}),{},'MPAs: strict reserves and wilderness areas', true, 0.7);
+Map.addLayer(nat_park.style({color: 'aacc00'}),{},'MPAs: national parks and natural monuments', true, 0.7);
+Map.addLayer(habitat_management.style({color: 'f9dc5c'}),{},'MPAs: habitat/species management areas', true, 0.7);
+Map.addLayer(landscape_sustainable.style({color: '42a5f5'}),{},'MPAs: protected landscapes/seascapes and sustainable-use areas', true, 0.7);
+
+// b. Exclusive Economic Zones
+
+print('First EEZ feature', eez.first());
+
+var eez_style = {
+  color: 'f17300',
+  fillColor: '00000000',
+  width: 1.8,
+  lineType: 'dashed'
+};
+
+Map.addLayer(eez.style(eez_style), {}, 'EEZ boundaries', true, 0.6);
+
+// Map details
+var title = ui.Label({
+  value: 'Mapping the world’s deep ocean ecosystems',
+  style: {
+    position: 'bottom-right',
+    fontSize: '22px',
+    fontWeight: 'bold',
+    padding: '10px'
+  }
+});
+
+Map.add(title);
+
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '10px',
+    width: '280px'
+  }
+});
+
+legend.add(ui.Label({
+  value: 'Seabed elevation (m)',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '14px',
+    margin: '12px 0 8px 0'
+  }
+}));
+
+// Create a horizontal gradient from 0 to 1
+var gradient = ee.Image.pixelLonLat().select('longitude');
+
+var bathymetryBar = ui.Thumbnail({
+  image: gradient.visualize({
+    min: 0,
+    max: 1,
+    palette: magma_palette
+  }),
+  params: {
+    bbox: [0, 0, 1, 0.1],
+    dimensions: '240x16',
+    format: 'png'
+  },
+  style: {
+    margin: '0',
+    width: '240px',
+    height: '16px'
+  }
+});
+
+legend.add(bathymetryBar);
+
+legend.add(ui.Panel({
+  widgets: [
+    ui.Label('≤ −6000', {margin: '4px 0 0 0'}),
+    ui.Label('−3000', {margin: '4px 0 0 65px'}),
+    ui.Label('0', {margin: '4px 0 0 75px'})
+  ],
+  layout: ui.Panel.Layout.Flow('horizontal')
+}));
+
+legend.add(ui.Label({
+  value: 'Deep-ocean ecosystems',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '14px',
+    margin: '12px 0 8px 0'
+  }
+}));
+
+function addLegendRow(color, description) {
+  var colorBox = ui.Label({
+    value: '',
+    style: {
+      backgroundColor: color,
+      padding: '8px',
+      margin: '0 8px 4px 0'
+    }
+  });
+
+  var label = ui.Label({
+    value: description,
+    style: {
+      margin: '0 0 4px 0',
+      fontSize: '12px'
+    }
+  });
+
+  var row = ui.Panel({
+    widgets: [colorBox, label],
+    layout: ui.Panel.Layout.Flow('horizontal')
+  });
+
+  legend.add(row);
+}
+
+addLegendRow('#29205C', 'Hadal trenches and troughs (>6000 m)');
+addLegendRow('#164B83', 'Abyssal plains (3000–6000 m)');
+addLegendRow('#3996B8', 'Continental and island slopes (250–<3000 m)');
+addLegendRow('red', 'Submarine canyons (>200 m; slope >6°)');
+
+Map.add(legend);
+
+legend.add(ui.Label({
+  value: 'Marine and coastal protected areas',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '14px',
+    margin: '12px 0 8px 0'
+  }
+}));
+
+addLegendRow('#ff7096', 'Ia–Ib: Strict reserves / wilderness');
+addLegendRow('#aacc00', 'II–III: National parks / monuments');
+addLegendRow('#f9dc5c', 'IV: Habitat/species management');
+addLegendRow('#42a5f5', 'V–VI: Landscapes / sustainable use');
+addLegendRow('#AAAAAA', 'Unassigned, unreported or not applicable (outline)');
+
+legend.add(ui.Label({
+  value: 'Exclusive economic zones',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '14px',
+    margin: '12px 0 8px 0'
+  }
+}));
+
+addLegendRow('#f17300', 'EEZ boundaries (dashed)');
+
+Map.setCenter(0, 0, 2);

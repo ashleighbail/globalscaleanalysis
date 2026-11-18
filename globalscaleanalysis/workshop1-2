@@ -1,0 +1,184 @@
+// Workshop 1 - Visualising Data
+Map.setOptions('SATELLITE');
+Map.setCenter(174.0638, -39.298, 11);
+// Import SRTM data
+var dataset = ee.Image("CGIAR/SRTM90_V4")
+print (dataset) // Look at the data properties
+Map.addLayer(dataset, {min: 0, max: 2500}, 'custom visualisation', false);
+Map.addLayer(dataset, {min: 0, max: 2500, palette: ['blue', 'green', 'red']}, 'custom palette', false);
+// Set up visualisation parameters
+var elevationVis = {
+  min: 0,
+  max: 2500,
+  palette: ['0000ff', '00ffff', 'ffff00', 'ff0000', 'ffffff']
+};
+// Add the data layer to the map
+Map.addLayer(dataset, elevationVis, 'Elevation', true, 0.6);
+// Add the protected planet data
+var protected_areas = ee.FeatureCollection("WCMC/WDPA/current/polygons");
+Map.addLayer(protected_areas, {color: 'darkgreen'}, 'Protected Areas', false);
+print ('No of protected areas:', protected_areas.size());
+print (protected_areas.first()) // Looking just at the first feature is much faster
+// Filter only for level II protected areas
+var iucn_pa = protected_areas.filter(ee.Filter.eq('IUCN_CAT', 'II'));
+Map.addLayer(iucn_pa, {color: 'yellow'}, 'National Parks', false);
+// Filter date
+var iucn_pre1980 = protected_areas.filter(ee.Filter.lte('STATUS_YR', 1980));
+Map.addLayer(iucn_pre1980, {color: 'white'}, 'PAs in 1980', false);
+// Spatial filters
+// Import countries
+var countries = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017");
+print (countries); // country name: features -> properties
+// Map.addLayer(countries);
+// New Zealand only
+var nz = countries.filter(ee.Filter.equals('country_na', 'New Zealand'));
+print (nz);
+// Map.addLayer(nz);
+// Filter by location: spatial filter PAs only in NZ
+var nz_pa = protected_areas.filter(ee.Filter.bounds(nz));
+print ('Number of PAs in NZ:', nz_pa.size());
+Map.addLayer(nz_pa, {color: 'red'}, 'NZ PAs only', false);
+// Link them all into one statement
+var nz_national_parks = protected_areas
+   .filter(ee.Filter.eq('IUCN_CAT', 'II')) // filter only NPs
+   .filter(ee.Filter.bounds(nz)); // filter to NZ
+print ('Number of National Parks in NZ:', nz_national_parks.size());
+
+
+
+
+// COMPUTATION IN EARTH ENGINE
+
+print (dataset);
+var srtm_fixed = dataset.add(100);
+Map.addLayer(srtm_fixed, elevationVis, 'Fixed SRTM');
+var elevGt1500 = dataset.gt(1500).selfMask();
+Map.addLayer(elevGt1500, {palette: 'fuchsia'}, '> 1500 m elevation', true, 0.7);
+
+/* Use terrain, an algorithm that returns several topographic variables
+from an elevation image */
+var terrain = ee.Terrain.products(dataset);
+print ('terrain', terrain); // Print it to see what's inside
+// Make images from the bands we are interested in
+var slope = terrain.select(['slope']);
+var hillshade = terrain.select(['hillshade']);
+Map.addLayer (hillshade, {color: 'black'}, 'hillshade', false);
+Map.addLayer (slope, {palette: ['white', 'darkred', 'black'], min:0, max:45}, 'slope');
+
+// Find Taranaki NP
+var taranaki = protected_areas.filter(ee.Filter.eq('NAME', 'Egmont National Park'));
+Map.addLayer(taranaki, {color: 'orange'}, 'Mt Taranaki');
+// Apply a spatial reducer to estimate mean slope
+var slopeOutput = slope.reduceRegion({
+  reducer: ee.Reducer.mean(), // compute the mean of all slope pixel values in the national park
+  geometry: taranaki,
+  scale: 90 // pixel size in metres (retrieved from metadata)
+});
+print ('slopeOutput', slopeOutput);
+// Try clipping to see if it's any different
+var taranakiSlope = slope.clip(taranaki);
+Map.addLayer (taranakiSlope, {palette: ['white', 'darkred', 'black'],
+  min:0, max:45}, 'Taranaki Slope');
+var slopeOutput2 = taranakiSlope.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: taranaki,
+  scale: 90
+});
+print ('slopeOutput2', slopeOutput2); // = same answer
+// Use reduce regions with a different reducer (Max elevation value)
+var elevOutput_Max = dataset.reduceRegion({
+  reducer: ee.Reducer.max(), // compute the max of all pixel values in the national park
+  geometry: taranaki,
+  scale: 90
+});
+print ('elevOutput_Max', elevOutput_Max); // = 2484 m
+// Use reduce regions with a different reducer (Min elevation value)
+var elevOutput_Min = dataset.reduceRegion({
+  reducer: ee.Reducer.min(), // compute the min of all pixel values
+  geometry: taranaki,
+  scale: 90
+});
+print ('elevOutput_Min', elevOutput_Min); // = 108 m
+// MinMax reducer
+var elevOutput_MinMax = dataset.reduceRegion({
+  reducer: ee.Reducer.minMax(),
+  geometry: taranaki,
+  scale: 90
+});
+print ('elevOutput_MinMax', elevOutput_MinMax);
+
+/* The power of reducers for conducting spatial analyses is important
+to understand. We can use them to produce important spatial statistics
+for almost any raster dataset and for any region or site we are
+interested in. They can be applied to a point feature, a geometry, a
+feature, a feature collection - the opportunities are fairly endless. */
+
+// Get area of >1500m
+var areaGt1500m = elevGt1500 // binary 1 = yes
+  .multiply (ee.Image.pixelArea()) // get the area of each pixel
+  .reduceRegion({
+    reducer: ee.Reducer.sum(), // sum all pixel areas together
+    geometry: taranaki,
+    scale: 90
+  });
+print ('The area of Taranaki above 1500m (m2)', areaGt1500m);
+print ('The area of Taranaki above 1500m (km2)',
+ee.Number(areaGt1500m.get('elevation')).divide(1000*1000));
+
+var dataset2 = ee.ImageCollection('WORLDCLIM/V1/MONTHLY');
+print (dataset2) // 12 images where each one is a month
+// Get two months 
+var jan_climate = ee.Image ("WORLDCLIM/V1/MONTHLY/01");
+var july_climate = ee.Image ("WORLDCLIM/V1/MONTHLY/07");
+// Select their average temperature bands
+var jan_climate_avg = jan_climate.select('tavg').multiply(0.1);
+var july_climate_avg = july_climate.select('tavg').multiply(0.1);
+// Select vis parameters
+var meanTemperatureVis = {
+  min: -40,
+  max: 30,
+  palette: ['blue', 'purple', 'cyan', 'green', 'yellow', 'red'],
+};
+Map.addLayer(jan_climate_avg, meanTemperatureVis, 'janClimate');
+Map.addLayer(july_climate_avg, meanTemperatureVis, 'julyClimate');
+// Reduce to get the yearly average
+var annualMeanTemperature = dataset2
+   .select('tavg')
+   .mean() // this is the reducer
+   .multiply(0.1); // scale pixels to real values
+Map.setCenter(71.7, 52.4, 3);
+Map.addLayer(annualMeanTemperature, meanTemperatureVis, 'Mean Annual Temperature');
+
+var dataset3 = ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA')
+   .filterDate('2017-01-01', '2017-12-31');
+var trueColour = dataset3.select(['B4', 'B3', 'B2']);
+var trueColourVis = {
+  min: 0.0,
+  max: 0.4,
+};
+Map.setCenter(146.746, -19.529, 9);
+Map.addLayer(trueColour, trueColourVis, 'True Colour Landsat');
+// Reduce - to remove cloud cover
+var LandsatMedian = trueColour.median();
+Map.addLayer(LandsatMedian, trueColourVis, 'True Colour Median');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
